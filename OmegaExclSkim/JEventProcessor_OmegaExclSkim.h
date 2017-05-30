@@ -24,6 +24,7 @@ private:
 		jerror_t fini(void);						///< Called after last event of last event source has been processed.
   
   int WRITE_EVIO_FILE;
+  int WRITE_ROOT_TREE;
 };
 
 #endif // _JEventProcessor_OmegaExclSkim_

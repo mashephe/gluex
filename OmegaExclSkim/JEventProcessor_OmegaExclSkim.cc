@@ -13,6 +13,7 @@ using namespace jana;
 #include "evio_writer/DEventWriterEVIO.h"
 
 #include <ANALYSIS/DAnalysisResults.h>
+#include <ANALYSIS/DEventWriterROOT.h>
 
 // Routine used to create our JEventProcessor
 #include <JANA/JApplication.h>
