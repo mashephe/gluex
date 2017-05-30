@@ -32,6 +32,8 @@ extern "C"{
 JEventProcessor_OmegaExclSkim::JEventProcessor_OmegaExclSkim()
 {
 
+  WRITE_EVIO_FILE = 1;
+  gPARMS->SetDefaultParameter( "WRITE_EVIO_FILE", WRITE_EVIO_FILE );
 }
 
 //------------------
@@ -66,23 +68,40 @@ jerror_t JEventProcessor_OmegaExclSkim::brun(JEventLoop *eventLoop, int32_t runn
 //------------------
 jerror_t JEventProcessor_OmegaExclSkim::evnt(JEventLoop *loop, uint64_t eventnumber)
 {
-  const DEventWriterEVIO* eventWriterEVIO = NULL;
-  loop->GetSingle(eventWriterEVIO);
-
-  // write out BOR events
-  if(loop->GetJEvent().GetStatusBit(kSTATUS_BOR_EVENT)) {
-
-    eventWriterEVIO->Write_EVIOEvent(loop, "omega");
-    return NOERROR;
-  }
 
   vector<const DAnalysisResults*> analysisResultsVector;
   loop->Get( analysisResultsVector );
+  
+  if( WRITE_EVIO_FILE ){
+    
+    const DEventWriterEVIO* eventWriterEVIO = NULL;
+    loop->GetSingle(eventWriterEVIO);
 
-  if( analysisResultsVector[0]->Get_NumPassedParticleCombos() != 0 ){
+    // write out BOR events
+    if(loop->GetJEvent().GetStatusBit(kSTATUS_BOR_EVENT)) {
 
-    eventWriterEVIO->Write_EVIOEvent(loop, "omega");
+      eventWriterEVIO->Write_EVIOEvent(loop, "omega");
+      return NOERROR;
+    }
+
+    if( analysisResultsVector[0]->Get_NumPassedParticleCombos() != 0 ){
+
+      eventWriterEVIO->Write_EVIOEvent(loop, "omega");
+    }
   }
+  
+  if( WRITE_ROOT_TREE ){
+    
+    //Recommended: Write surviving particle combinations (if any) to output ROOT TTree
+    //If no cuts are performed by the analysis actions added to a DReaction, then this saves all of its particle combinations.
+    //The event writer gets the DAnalysisResults objects from JANA, performing the analysis.
+    // string is DReaction factory tag: will fill trees for all DReactions that are defined in the specified factory
+
+    const DEventWriterROOT* eventWriterROOT = NULL;
+    loop->GetSingle(eventWriterROOT);
+    eventWriterROOT->Fill_DataTrees(loop, "OmegaExclSkim");
+  }
+
   
   return NOERROR;
 }
