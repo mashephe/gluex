@@ -105,7 +105,6 @@ jerror_t JEventProcessor_OmegaExclSkim::evnt(JEventLoop *loop, uint64_t eventnum
     loop->GetSingle(eventWriterROOT);
     eventWriterROOT->Fill_DataTrees(loop, "OmegaExclSkim");
   }
-
   
   return NOERROR;
 }

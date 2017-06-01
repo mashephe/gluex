@@ -129,6 +129,9 @@ jerror_t DReaction_factory_OmegaExclSkim::evnt(JEventLoop* locEventLoop, uint64_
   // Kinematics of final selection
   //	locReaction->Add_AnalysisAction(new DHistogramAction_ParticleComboKinematics(locReaction, false, "Final")); //false: fill histograms with measured particle data
 
+   string locTreeFileName = "omega_skim_tree.root";
+   locReaction->Enable_TTreeOutput(locTreeFileName, true); //true/false: do/don't save unused hypotheses
+  
   _data.push_back(locReaction); //Register the DReaction with the factory
 
   return NOERROR;
