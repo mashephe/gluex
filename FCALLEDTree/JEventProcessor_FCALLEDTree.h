@@ -37,9 +37,9 @@ class JEventProcessor_FCALLEDTree:public jana::JEventProcessor{
   float m_y[kMaxHits];
   float m_E[kMaxHits];
   float m_t[kMaxHits];
-  int m_integ[kMaxHits];
-  int m_ped[kMaxHits];
-  int m_peak[kMaxHits];
+  float m_integ[kMaxHits];
+  float m_ped[kMaxHits];
+  float m_peak[kMaxHits];
 
   int m_run;
   uint64_t m_event;

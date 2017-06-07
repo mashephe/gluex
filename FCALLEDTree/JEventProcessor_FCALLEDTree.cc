@@ -57,9 +57,9 @@ jerror_t JEventProcessor_FCALLEDTree::init(void)
   m_tree->Branch( "y", m_y, "y[nHits]/F" );
   m_tree->Branch( "E", m_E, "E[nHits]/F" );
   m_tree->Branch( "t", m_t, "t[nHits]/F" );
-  m_tree->Branch( "integ", m_integ, "integ[nHits]/I" );
-  m_tree->Branch( "ped", m_ped, "ped[nHits]/I" );
-  m_tree->Branch( "peak", m_peak, "peak[nHits]/I" );
+  m_tree->Branch( "integ", m_integ, "integ[nHits]/F" );
+  m_tree->Branch( "ped", m_ped, "ped[nHits]/F" );
+  m_tree->Branch( "peak", m_peak, "peak[nHits]/F" );
   
   m_tree->Branch( "run", &m_run, "run/I" );
   m_tree->Branch( "event", &m_event, "event/L" );
@@ -121,10 +121,11 @@ jerror_t JEventProcessor_FCALLEDTree::evnt(JEventLoop *loop, uint64_t eventnumbe
     vector< const DFCALDigiHit* > digiHits;
     (**hit).Get( digiHits );
     const DFCALDigiHit& dHit = *(digiHits[0]);
-
-    m_ped[m_nHits] = dHit.pedestal;
-    m_peak[m_nHits] = dHit.pulse_peak;
-    m_integ[m_nHits] = dHit.pulse_integral;
+    
+    m_ped[m_nHits] = (float)dHit.pedestal/dHit.nsamples_pedestal;
+    m_peak[m_nHits] = dHit.pulse_peak - m_ped[m_nHits];
+    m_integ[m_nHits] = dHit.pulse_integral -
+       (m_ped[m_nHits]*dHit.nsamples_integral);
     
     ++m_nHits;
   }
