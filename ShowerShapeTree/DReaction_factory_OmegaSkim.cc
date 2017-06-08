@@ -116,9 +116,10 @@ jerror_t DReaction_factory_OmegaSkim::evnt(JEventLoop* locEventLoop, uint64_t lo
   locReaction->Add_AnalysisAction(new DHistogramAction_InvariantMass(locReaction, omega, true, 600, 0.5, 1.1, "Omega_KinFit"));
 
   // Kinematic Fit Results
-  locReaction->Add_AnalysisAction(new DHistogramAction_KinFitResults(locReaction, 0.05, true)); //5% confidence level cut on pull histograms only
-  locReaction->Add_AnalysisAction(new DCutAction_KinFitFOM(locReaction, 5.73303E-7)); // confidence level cut //+/- 5 sigma
-  //locReaction->Add_AnalysisAction(new DCutAction_KinFitFOM(locReaction, 1E-40)); 
+  //5% confidence level cut on pull:
+  locReaction->Add_AnalysisAction(new DHistogramAction_KinFitResults(locReaction, 0.05, true)); 
+  //  locReaction->Add_AnalysisAction(new DCutAction_KinFitFOM(locReaction, 5.73303E-7)); // confidence level cut //+/- 5 sigma
+  locReaction->Add_AnalysisAction(new DCutAction_KinFitFOM(locReaction, .1));
 
   // MASSES, POST-KINFIT
   locReaction->Add_AnalysisAction(new DHistogramAction_InvariantMass(locReaction, Pi0, false, 850, 0.05, 0.22, "Pi0_PostKinFitCut"));
@@ -129,8 +130,8 @@ jerror_t DReaction_factory_OmegaSkim::evnt(JEventLoop* locEventLoop, uint64_t lo
   // Kinematics of final selection
   //	locReaction->Add_AnalysisAction(new DHistogramAction_ParticleComboKinematics(locReaction, false, "Final")); //false: fill histograms with measured particle data
 
-   string locTreeFileName = "p3pi_excl_skim.root";
-   locReaction->Enable_TTreeOutput(locTreeFileName, true); //true/false: do/don't save unused hypotheses
+  //   string locTreeFileName = "p3pi_excl_skim.root";
+  //   locReaction->Enable_TTreeOutput(locTreeFileName, true); //true/false: do/don't save unused hypotheses
   
   _data.push_back(locReaction); //Register the DReaction with the factory
 
