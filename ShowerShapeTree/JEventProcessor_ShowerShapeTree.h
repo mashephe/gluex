@@ -38,6 +38,8 @@ private:
   void fillHitsFromShower( const DFCALShower* shower );
   
   TTree* m_tree;
+
+  uint64_t m_event;
   
   int m_typeSh;
   

@@ -23,6 +23,7 @@ using namespace jana;
 #include "DLorentzVector.h"
 #include "TTree.h"
 
+#include "DFactoryGenerator_OmegaSkim.h"
 
 // Routine used to create our JEventProcessor
 #include <JANA/JApplication.h>
@@ -31,6 +32,7 @@ extern "C"{
 void InitPlugin(JApplication *app){
 	InitJANAPlugin(app);
 	app->AddProcessor(new JEventProcessor_ShowerShapeTree());
+	app->AddFactoryGenerator( new DFactoryGenerator_OmegaSkim() );
 }
 } // "C"
 
@@ -60,6 +62,8 @@ jerror_t JEventProcessor_ShowerShapeTree::init(void)
   japp->RootWriteLock();
   
   m_tree = new TTree( "fcalShowers", "Showers" );
+
+  m_tree->Branch( "event", &m_event, "event/L" );
   
   m_tree->Branch( "typeSh", &m_typeSh, "typeSh/I" );
   m_tree->Branch( "xSh", &m_xSh, "xSh/F" );
@@ -67,7 +71,7 @@ jerror_t JEventProcessor_ShowerShapeTree::init(void)
   m_tree->Branch( "eSh", &m_eSh, "eSh/F" );
   m_tree->Branch( "tSh", &m_tSh, "tSh/F" );
 
-  m_tree->Branch( "qTr", &m_qTr, "qTr/I" );
+  m_tree->Branch( "qTr", &m_qTr, "qTr/F" );
   m_tree->Branch( "docaTr", &m_docaTr, "docaTr/F" );
   m_tree->Branch( "dtTr", &m_dtTr, "dtTr/F" );
   m_tree->Branch( "pTr", &m_pTr, "pTr/F" );
@@ -97,61 +101,36 @@ jerror_t JEventProcessor_ShowerShapeTree::brun(JEventLoop *eventLoop, int32_t ru
 //------------------
 jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventnumber)
 {
-	// This is called for every event. Use of common resources like writing
-	// to a file or filling a histogram should be mutex protected. Using
-	// loop->Get(...) to get reconstructed objects (and thereby activating the
-	// reconstruction algorithm) should be done outside of any mutex lock
-	// since multiple threads may call this method at the same time.
-	// Here's an example:
-	//
-	// vector<const MyDataClass*> mydataclasses;
-	// loop->Get(mydataclasses);
-	//
-	// japp->RootFillLock(this);
-	//  ... fill historgrams or trees ...
-	// japp->RootFillUnLock(this);
 
   vector<const DAnalysisResults*> analysisResultsVector;
   loop->Get( analysisResultsVector );
-  
+  /*
   vector<const DDetectorMatches*> detectorMatchesVector;
   loop->Get( detectorMatchesVector );
+  assert( detectorMatchesVector.size() == 1 );
   const DDetectorMatches* matches = detectorMatchesVector[0];
-  
-  vector<const DFCALShower*> showerVector;
-  loop->Get( showerVector );
-  
+  */
   for( vector< const DAnalysisResults* >::const_iterator res = analysisResultsVector.begin();
       res != analysisResultsVector.end(); ++res ){
-    
+
     if( (**res).Get_Reaction()->Get_ReactionName() != "p3pi_excl" ) continue;
     
     size_t nCombos = (**res).Get_NumPassedParticleCombos();
+
+    if( nCombos == 0 ) return NOERROR;
+    
     deque< const DParticleCombo* > combos;
     (**res).Get_PassedParticleCombos( combos );
     
-    vector<DFCALShowerMatchParams> matchedShowers;
+    vector<const DFCALShowerMatchParams*> matchedShowers;
     map<const DFCALShower*, int> showerMatchIndex;
-    map<const DFCALShower*, const DChargedTrackHypothesis*> showerMatchTrack;
+    map<const DFCALShower*, const DKinematicData*> showerMatchTrack;
     list<const DFCALShower*> pi0Showers;
     
     for( size_t iCombo = 0; iCombo < nCombos; ++iCombo){
-     
-      deque< const DChargedTrack* > chargedTracks;
-      deque< const DNeutralShower* > neutralShowers;
-      
-      combos[iCombo]->Get_DetectedFinalChargedParticles_SourceObjects( chargedTracks );
+	  	  
+      deque< const DNeutralShower* > neutralShowers;      
       combos[iCombo]->Get_DetectedFinalNeutralParticles_SourceObjects( neutralShowers );
-
-      // something is wrong if this doesn't check out
-      assert( chargedTracks.size() == 2 && neutralShowers.size() == 2 );
-      
-      const DChargedTrackHypothesis* pipTrack = ( chargedTracks[0]->Get_Charge() > 0 ?
-                                                 chargedTracks[0]->Get_Hypothesis( PiPlus ) :
-                                                 chargedTracks[1]->Get_Hypothesis( PiPlus ) );
-      const DChargedTrackHypothesis* pimTrack = ( chargedTracks[0]->Get_Charge() < 0 ?
-                                                 chargedTracks[0]->Get_Hypothesis( PiMinus ) :
-                                                 chargedTracks[1]->Get_Hypothesis( PiMinus ) );
 
       for( size_t i = 0; i < neutralShowers.size(); ++i ){
         
@@ -160,10 +139,38 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
           pi0Showers.push_back( dynamic_cast< const DFCALShower* >( neutralShowers[i]->dBCALFCALShower ) );
         }
       }
+
+
+      deque<const DKinematicData*> tracks;
+      combos[iCombo]->Get_FinalParticles( PiPlus, tracks );
+      const DChargedTrackHypothesis* pipTrack = dynamic_cast<const DChargedTrackHypothesis*>( tracks[0] );	
+      combos[iCombo]->Get_FinalParticles( PiMinus, tracks );
+      const DChargedTrackHypothesis* pimTrack = dynamic_cast<const DChargedTrackHypothesis*>( tracks[0] );
+
+      const DFCALShowerMatchParams* match = pipTrack->Get_FCALShowerMatchParams();
+      if( match != NULL ){
+	
+	const DFCALShower* showerPtr = match->dFCALShower;
+	showerMatchTrack[showerPtr] = pipTrack;
+        showerMatchIndex[showerPtr] = matchedShowers.size();
+        matchedShowers.push_back( match );	
+      }
       
+      match = pimTrack->Get_FCALShowerMatchParams();
+      if( match != NULL ){
+	
+	const DFCALShower* showerPtr = match->dFCALShower;
+	showerMatchTrack[showerPtr] = pimTrack;
+        showerMatchIndex[showerPtr] = matchedShowers.size();
+        matchedShowers.push_back( match );	
+      }
+
+      /*
       vector<DFCALShowerMatchParams> thisMatch;
       matches->Get_FCALMatchParams( pipTrack, thisMatch );
       for( size_t i = 0; i < thisMatch.size(); ++i ){
+
+	cout << "event has " << thisMatch.size() << " matches to pipTrack" << endl;
         
         const DFCALShower* showerPtr = thisMatch[i].dFCALShower;
         // skip this match if it isn't the closest shower to the track
@@ -179,7 +186,9 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
       thisMatch.clear();
       matches->Get_FCALMatchParams( pimTrack, thisMatch );
       for( size_t i = 0; i < thisMatch.size(); ++i ){
-        
+
+	cout << "event has " << thisMatch.size() << " matches to pimTrack" << endl;
+	
         const DFCALShower* showerPtr = thisMatch[i].dFCALShower;
         // skip this match if it isn't the closest shower to the track
         if( ( showerMatchIndex.find( showerPtr ) != showerMatchIndex.end() ) &&
@@ -190,24 +199,36 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
         showerMatchIndex[showerPtr] = matchedShowers.size();
         matchedShowers.push_back( thisMatch[i] );
       }
+      */
     }
-    
+
+    vector<const DFCALShower*> showerVector;
+    loop->Get( showerVector );
+ 
     // entering the tree-filling, thread-unsafe, region...
     
     japp->RootFillLock(this);
+
+    m_event = eventnumber;
     
     for( size_t iShower = 0; iShower < showerVector.size(); ++iShower ){
       
       const DFCALShower* shower = showerVector[iShower];
-       
+
+      m_docaTr = 1E6;
+      m_dtTr = 1E6;
+      m_pTr = 0;
+      m_qTr = 0;
+      
       if( showerMatchIndex.find( shower ) != showerMatchIndex.end() ){
         
-        DFCALShowerMatchParams match = matchedShowers[showerMatchIndex[shower]];
+        const DFCALShowerMatchParams* match = matchedShowers[showerMatchIndex[shower]];
         
         m_typeSh = 1;
-        m_docaTr = match.dDOCAToShower;
-        m_dtTr = match.dFlightTime - shower->getTime();
+        m_docaTr = match->dDOCAToShower;
+        m_dtTr = match->dFlightTime - shower->getTime();
         m_pTr = showerMatchTrack[shower]->pmag();
+	m_qTr = showerMatchTrack[shower]->charge();
       }
       else if( find( pi0Showers.begin(), pi0Showers.end(), shower ) !=
               pi0Showers.end() ){
@@ -225,17 +246,18 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
       m_tSh = shower->getTime();
       m_xSh = shower->getPosition().X();
       m_ySh = shower->getPosition().Y();
-      
+
+      // this hit counter will get incremented in the fill function
+      m_nHits = 0;
       fillHitsFromShower( shower );
       
       m_tree->Fill();
-      
-      japp->RootFillUnLock(this);
-
     }
   }
 
-	return NOERROR;
+  japp->RootFillUnLock(this);
+  
+  return NOERROR;
 }
 
 //------------------
