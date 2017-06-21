@@ -70,11 +70,15 @@ jerror_t JEventProcessor_ShowerShapeTree::init(void)
   m_tree->Branch( "ySh", &m_ySh, "ySh/F" );
   m_tree->Branch( "eSh", &m_eSh, "eSh/F" );
   m_tree->Branch( "tSh", &m_tSh, "tSh/F" );
+  m_tree->Branch( "disSh", &m_disSh, "disSh/F" );
+  m_tree->Branch( "dtSh", &m_dtSh, "dtSh/F" );
 
   m_tree->Branch( "qTr", &m_qTr, "qTr/F" );
   m_tree->Branch( "docaTr", &m_docaTr, "docaTr/F" );
-  m_tree->Branch( "dtTr", &m_dtTr, "dtTr/F" );
+  m_tree->Branch( "tTr", &m_tTr, "tTr/F" );
   m_tree->Branch( "pTr", &m_pTr, "pTr/F" );
+  m_tree->Branch( "xTr", &m_xTr, "xTr/F" );
+  m_tree->Branch( "yTr", &m_yTr, "yTr/F" );
   
   m_tree->Branch( "nHits", &m_nHits, "nHits/I" );
   m_tree->Branch( "xHit", m_xHit, "xHit[nHits]/F" );
@@ -104,12 +108,10 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
 
   vector<const DAnalysisResults*> analysisResultsVector;
   loop->Get( analysisResultsVector );
-  /*
-  vector<const DDetectorMatches*> detectorMatchesVector;
-  loop->Get( detectorMatchesVector );
-  assert( detectorMatchesVector.size() == 1 );
-  const DDetectorMatches* matches = detectorMatchesVector[0];
-  */
+
+  DApplication* app = dynamic_cast<DApplication*>(loop->GetJApplication());
+  const DMagneticFieldMap* fieldMap = app->GetBfield(loop->GetJEvent().GetRunNumber());
+
   for( vector< const DAnalysisResults* >::const_iterator res = analysisResultsVector.begin();
       res != analysisResultsVector.end(); ++res ){
 
@@ -117,90 +119,43 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
     
     size_t nCombos = (**res).Get_NumPassedParticleCombos();
 
-    if( nCombos == 0 ) return NOERROR;
-    
+    // this is a strict cut, but we really want clean events
+    if( nCombos != 1 ) return NOERROR;    
     deque< const DParticleCombo* > combos;
     (**res).Get_PassedParticleCombos( combos );
-    
+    const DParticleCombo* combo = combos[0];
+
     vector<const DFCALShowerMatchParams*> matchedShowers;
     map<const DFCALShower*, int> showerMatchIndex;
     map<const DFCALShower*, const DKinematicData*> showerMatchTrack;
     list<const DFCALShower*> pi0Showers;
-    
-    for( size_t iCombo = 0; iCombo < nCombos; ++iCombo){
 	  	  
-      deque< const DNeutralShower* > neutralShowers;      
-      combos[iCombo]->Get_DetectedFinalNeutralParticles_SourceObjects( neutralShowers );
-
-      for( size_t i = 0; i < neutralShowers.size(); ++i ){
+    deque< const DNeutralShower* > neutralShowers;      
+    combo->Get_DetectedFinalNeutralParticles_SourceObjects( neutralShowers );
+    
+    for( size_t i = 0; i < neutralShowers.size(); ++i ){
         
-        if( neutralShowers[i]->dDetectorSystem == SYS_FCAL ){
-          
-          pi0Showers.push_back( dynamic_cast< const DFCALShower* >( neutralShowers[i]->dBCALFCALShower ) );
-        }
-      }
-
-
-      deque<const DKinematicData*> tracks;
-      combos[iCombo]->Get_FinalParticles( PiPlus, tracks );
-      const DChargedTrackHypothesis* pipTrack = dynamic_cast<const DChargedTrackHypothesis*>( tracks[0] );	
-      combos[iCombo]->Get_FinalParticles( PiMinus, tracks );
-      const DChargedTrackHypothesis* pimTrack = dynamic_cast<const DChargedTrackHypothesis*>( tracks[0] );
-
-      const DFCALShowerMatchParams* match = pipTrack->Get_FCALShowerMatchParams();
-      if( match != NULL ){
+      if( neutralShowers[i]->dDetectorSystem == SYS_FCAL ){
 	
-	const DFCALShower* showerPtr = match->dFCALShower;
-	showerMatchTrack[showerPtr] = pipTrack;
-        showerMatchIndex[showerPtr] = matchedShowers.size();
-        matchedShowers.push_back( match );	
+	pi0Showers.push_back( dynamic_cast< const DFCALShower* >( neutralShowers[i]->dBCALFCALShower ) );
       }
-      
-      match = pimTrack->Get_FCALShowerMatchParams();
-      if( match != NULL ){
-	
-	const DFCALShower* showerPtr = match->dFCALShower;
-	showerMatchTrack[showerPtr] = pimTrack;
-        showerMatchIndex[showerPtr] = matchedShowers.size();
-        matchedShowers.push_back( match );	
-      }
-
-      /*
-      vector<DFCALShowerMatchParams> thisMatch;
-      matches->Get_FCALMatchParams( pipTrack, thisMatch );
-      for( size_t i = 0; i < thisMatch.size(); ++i ){
-
-	cout << "event has " << thisMatch.size() << " matches to pipTrack" << endl;
-        
-        const DFCALShower* showerPtr = thisMatch[i].dFCALShower;
-        // skip this match if it isn't the closest shower to the track
-        if( ( showerMatchIndex.find( showerPtr ) != showerMatchIndex.end() ) &&
-            ( matchedShowers[showerMatchIndex[showerPtr]].dDOCAToShower <
-             thisMatch[i].dDOCAToShower ) ) continue;
-        
-        showerMatchTrack[showerPtr] = pipTrack;
-        showerMatchIndex[showerPtr] = matchedShowers.size();
-        matchedShowers.push_back( thisMatch[i] );
-      }
-      
-      thisMatch.clear();
-      matches->Get_FCALMatchParams( pimTrack, thisMatch );
-      for( size_t i = 0; i < thisMatch.size(); ++i ){
-
-	cout << "event has " << thisMatch.size() << " matches to pimTrack" << endl;
-	
-        const DFCALShower* showerPtr = thisMatch[i].dFCALShower;
-        // skip this match if it isn't the closest shower to the track
-        if( ( showerMatchIndex.find( showerPtr ) != showerMatchIndex.end() ) &&
-           ( matchedShowers[showerMatchIndex[showerPtr]].dDOCAToShower <
-            thisMatch[i].dDOCAToShower ) ) continue;
-        
-        showerMatchTrack[showerPtr] = pimTrack;
-        showerMatchIndex[showerPtr] = matchedShowers.size();
-        matchedShowers.push_back( thisMatch[i] );
-      }
-      */
     }
+
+    deque<const DKinematicData*> tracks;
+    combo->Get_DetectedFinalChargedParticles( tracks );
+    for( size_t iTrk = 0; iTrk < tracks.size(); ++iTrk ){
+
+      const DChargedTrackHypothesis* ctHypo = dynamic_cast<const DChargedTrackHypothesis*>( tracks[iTrk] );
+      const DFCALShowerMatchParams* match = ctHypo->Get_FCALShowerMatchParams();
+
+      if( match == NULL ) continue;
+      
+      const DFCALShower* showerPtr = match->dFCALShower;
+      showerMatchTrack[showerPtr] = tracks[iTrk];
+      showerMatchIndex[showerPtr] = matchedShowers.size();
+      matchedShowers.push_back( match );	
+    }
+    
 
     vector<const DFCALShower*> showerVector;
     loop->Get( showerVector );
@@ -215,20 +170,47 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
       
       const DFCALShower* shower = showerVector[iShower];
 
+      DVector3 fcalPos = shower->getPosition();
+      DVector3 norm( 0, 0, 1 );
+	  
       m_docaTr = 1E6;
-      m_dtTr = 1E6;
+      m_tTr = 1E6;
       m_pTr = 0;
       m_qTr = 0;
+
+      double pathLength, flightTime, flightTimeVariance;
+      DVector3 projPos, projMom;
+      
+      // loop over tracks and find the one closest to this shower
+      for( size_t iTrk = 0; iTrk < tracks.size(); ++iTrk ){
+
+	DReferenceTrajectory rt( fieldMap );
+	rt.SetMass( tracks[iTrk]->mass() );
+	rt.q = tracks[iTrk]->charge();
+	rt.Swim( tracks[iTrk]->position(), tracks[iTrk]->momentum(), rt.q );
+	
+	// swim the track to vertical plane the intercepts the shower position
+	if( rt.GetIntersectionWithPlane( fcalPos, norm, projPos, projMom, &pathLength,
+					 &flightTime, &flightTimeVariance, SYS_FCAL ) !=
+	    NOERROR ) continue;
+
+	double distance = ( fcalPos - projPos ).Mag();
+	
+	if( distance < m_docaTr ){
+
+	  m_docaTr = distance;
+	  m_tTr = tracks[iTrk]->t0() + flightTime;
+	  m_xTr = projPos.X();
+	  m_yTr = projPos.Y();
+	  m_pTr = tracks[iTrk]->pmag();
+	  m_qTr = tracks[iTrk]->charge();
+	}
+      }
       
       if( showerMatchIndex.find( shower ) != showerMatchIndex.end() ){
-        
-        const DFCALShowerMatchParams* match = matchedShowers[showerMatchIndex[shower]];
-        
+
+	// showers matched to a track by existing algorithm
         m_typeSh = 1;
-        m_docaTr = match->dDOCAToShower;
-        m_dtTr = match->dFlightTime - shower->getTime();
-        m_pTr = showerMatchTrack[shower]->pmag();
-	m_qTr = showerMatchTrack[shower]->charge();
       }
       else if( find( pi0Showers.begin(), pi0Showers.end(), shower ) !=
               pi0Showers.end() ){
@@ -246,6 +228,9 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
       m_tSh = shower->getTime();
       m_xSh = shower->getPosition().X();
       m_ySh = shower->getPosition().Y();
+
+      m_disSh = ( shower->getPosition() - tracks[0]->position() ).Mag();
+      m_dtSh = shower->getTime() - tracks[0]->t0();
 
       // this hit counter will get incremented in the fill function
       m_nHits = 0;
@@ -276,8 +261,13 @@ jerror_t JEventProcessor_ShowerShapeTree::erun(void)
 //------------------
 jerror_t JEventProcessor_ShowerShapeTree::fini(void)
 {
-	// Called before program exit after event processing is finished.
-	return NOERROR;
+  
+  // Called before program exit after event processing is finished.
+  japp->RootWriteLock();
+  m_tree->Write();
+  japp->RootUnLock();
+ 
+  return NOERROR;
 }
 
 void

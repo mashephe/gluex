@@ -47,12 +47,16 @@ private:
   float m_ySh;
   float m_eSh;
   float m_tSh;
+  float m_disSh;
+  float m_dtSh;
   
   float m_qTr;
   float m_docaTr;
-  float m_dtTr;
+  float m_tTr;
   float m_pTr;
-
+  float m_xTr;
+  float m_yTr;
+  
   int m_nHits;
   float m_xHit[kMaxHits];
   float m_yHit[kMaxHits];

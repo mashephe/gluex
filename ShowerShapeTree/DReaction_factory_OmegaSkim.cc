@@ -119,8 +119,10 @@ jerror_t DReaction_factory_OmegaSkim::evnt(JEventLoop* locEventLoop, uint64_t lo
   //5% confidence level cut on pull:
   locReaction->Add_AnalysisAction(new DHistogramAction_KinFitResults(locReaction, 0.05, true)); 
   //  locReaction->Add_AnalysisAction(new DCutAction_KinFitFOM(locReaction, 5.73303E-7)); // confidence level cut //+/- 5 sigma
-  locReaction->Add_AnalysisAction(new DCutAction_KinFitFOM(locReaction, .01));
+  locReaction->Add_AnalysisAction(new DCutAction_KinFitFOM(locReaction, .05));
 
+  locReaction->Add_AnalysisAction(new DCutAction_BeamEnergy(locReaction, true, 7.5, 9.0));
+  
   // MASSES, POST-KINFIT
   locReaction->Add_AnalysisAction(new DHistogramAction_InvariantMass(locReaction, Pi0, false, 850, 0.05, 0.22, "Pi0_PostKinFitCut"));
   locReaction->Add_AnalysisAction(new DHistogramAction_MissingMassSquared(locReaction, false, 1000, -0.1, 0.1, "PostKinFitCut"));
