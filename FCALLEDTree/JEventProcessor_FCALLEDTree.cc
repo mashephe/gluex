@@ -93,6 +93,8 @@ jerror_t JEventProcessor_FCALLEDTree::evnt(JEventLoop *loop, uint64_t eventnumbe
   vector< const DFCALHit* > hits;
   loop->Get( hits );
 
+  if( hits.size() > kMaxHits ) return NOERROR;
+  
   vector<const DFCALGeometry*> fcalGeomVect;
   loop->Get( fcalGeomVect );
   if (fcalGeomVect.size() < 1)
@@ -154,6 +156,10 @@ jerror_t JEventProcessor_FCALLEDTree::erun(void)
 jerror_t JEventProcessor_FCALLEDTree::fini(void)
 {
   // Called before program exit after event processing is finished.
+  japp->RootWriteLock();
+  m_tree->Write();
+  japp->RootUnLock();
+
   return NOERROR;
 }
 
