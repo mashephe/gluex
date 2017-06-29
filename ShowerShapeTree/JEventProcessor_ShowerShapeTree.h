@@ -45,10 +45,19 @@ private:
   
   float m_xSh;
   float m_ySh;
+  float m_zSh;
   float m_eSh;
   float m_tSh;
   float m_disSh;
   float m_dtSh;
+
+  float m_t0RF;
+  
+  float m_eCl;
+  float m_tCl;
+  float m_eWtTCl;
+  float m_eWtTRMSCl;
+  float m_disCl;
   
   float m_qTr;
   float m_docaTr;
@@ -56,7 +65,15 @@ private:
   float m_pTr;
   float m_xTr;
   float m_yTr;
-  
+  float m_t0Tr;
+
+  float m_docaTrPF;
+  float m_tTrPF;
+  float m_pTrPF;
+  float m_xTrPF;
+  float m_yTrPF;
+  float m_t0TrPF;
+
   int m_nHits;
   float m_xHit[kMaxHits];
   float m_yHit[kMaxHits];
