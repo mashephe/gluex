@@ -9,6 +9,7 @@
 #define _JEventProcessor_ShowerShapeTree_
 
 #include <JANA/JEventProcessor.h>
+#include "FCAL/DFCALGeometry.h"
 
 #include <vector>
 
@@ -20,19 +21,19 @@ class TTree;
 
 class JEventProcessor_ShowerShapeTree:public jana::JEventProcessor{
 public:
-		JEventProcessor_ShowerShapeTree();
-		~JEventProcessor_ShowerShapeTree();
-		const char* className(void){return "JEventProcessor_ShowerShapeTree";}
+  JEventProcessor_ShowerShapeTree();
+  ~JEventProcessor_ShowerShapeTree();
+  const char* className(void){return "JEventProcessor_ShowerShapeTree";}
   
-private:
+ private:
   
   enum{ kMaxHits = 100 };
   
-		jerror_t init(void);						///< Called once at program start.
-		jerror_t brun(jana::JEventLoop *eventLoop, int32_t runnumber);	///< Called everytime a new run number is detected.
-		jerror_t evnt(jana::JEventLoop *eventLoop, uint64_t eventnumber);	///< Called every event.
-		jerror_t erun(void);						///< Called everytime run number changes, provided brun has been called.
-		jerror_t fini(void);						///< Called after last event of last event source has been processed.
+  jerror_t init(void);						///< Called once at program start.
+  jerror_t brun(jana::JEventLoop *eventLoop, int32_t runnumber);	///< Called everytime a new run number is detected.
+  jerror_t evnt(jana::JEventLoop *eventLoop, uint64_t eventnumber);	///< Called every event.
+  jerror_t erun(void);						///< Called everytime run number changes, provided brun has been called.
+  jerror_t fini(void);						///< Called after last event of last event source has been processed.
 
   void fillHitBlocks( const vector< const DFCALHit* >& hitVec );
   void fillHitsFromShower( const DFCALShower* shower );
@@ -40,8 +41,13 @@ private:
   TTree* m_tree;
 
   uint64_t m_event;
+
+  DFCALGeometry m_fcalGeom;
   
   int m_typeSh;
+
+  double m_zTarget;
+  double m_FCALUpstream;
   
   float m_xSh;
   float m_ySh;
@@ -50,6 +56,7 @@ private:
   float m_tSh;
   float m_disSh;
   float m_dtSh;
+  float m_depthSh;
 
   float m_t0RF;
   
@@ -75,6 +82,7 @@ private:
   float m_t0TrPF;
 
   int m_nHits;
+  int m_idHit[kMaxHits];
   float m_xHit[kMaxHits];
   float m_yHit[kMaxHits];
   float m_eHit[kMaxHits];

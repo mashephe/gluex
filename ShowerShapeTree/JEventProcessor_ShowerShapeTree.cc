@@ -13,6 +13,7 @@ using namespace jana;
 #include "FCAL/DFCALShower.h"
 #include "FCAL/DFCALCluster.h"
 #include "FCAL/DFCALHit.h"
+#include "FCAL/DFCALGeometry.h"
 
 #include "ANALYSIS/DAnalysisResults.h"
 #include "ANALYSIS/DParticleCombo.h"
@@ -40,7 +41,7 @@ void InitPlugin(JApplication *app){
 //------------------
 // JEventProcessor_ShowerShapeTree (Constructor)
 //------------------
-JEventProcessor_ShowerShapeTree::JEventProcessor_ShowerShapeTree()
+JEventProcessor_ShowerShapeTree::JEventProcessor_ShowerShapeTree() : m_fcalGeom()
 {
 
 }
@@ -73,6 +74,7 @@ jerror_t JEventProcessor_ShowerShapeTree::init(void)
   m_tree->Branch( "tSh", &m_tSh, "tSh/F" );
   m_tree->Branch( "disSh", &m_disSh, "disSh/F" );
   m_tree->Branch( "dtSh", &m_dtSh, "dtSh/F" );
+  m_tree->Branch( "depthSh", &m_depthSh, "depthSh/F" );
   m_tree->Branch( "t0RF", &m_t0RF, "t0RF/F" );
 
   m_tree->Branch( "tCl", &m_tCl, "tCl/F" );
@@ -97,6 +99,7 @@ jerror_t JEventProcessor_ShowerShapeTree::init(void)
   m_tree->Branch( "yTrPF", &m_yTrPF, "yTrPF/F" );
   
   m_tree->Branch( "nHits", &m_nHits, "nHits/I" );
+  m_tree->Branch( "idHit", m_idHit, "idHit[nHits]/I" );
   m_tree->Branch( "xHit", m_xHit, "xHit[nHits]/F" );
   m_tree->Branch( "yHit", m_yHit, "yHit[nHits]/F" );
   m_tree->Branch( "eHit", m_eHit, "eHit[nHits]/F" );
@@ -114,6 +117,21 @@ jerror_t JEventProcessor_ShowerShapeTree::brun(JEventLoop *loop, int32_t runnumb
 {
 
   // This is called whenever the run number changes
+
+  DApplication *dapp = dynamic_cast<DApplication*>(loop->GetJApplication());
+  const DGeometry *geom = dapp->GetDGeometry(runnumber);
+    
+  if( geom ) {
+
+    geom->GetTargetZ( m_zTarget );
+    geom->GetFCALZ( m_FCALUpstream );
+  }
+  else{
+      
+    cerr << "No geometry accessbile." << endl;
+    return RESOURCE_UNAVAILABLE;
+  }
+  
   return NOERROR;
 }
 
@@ -128,7 +146,6 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
   vector<const DEventRFBunch*> eventRFBunches;
   loop->Get( eventRFBunches );
   if( eventRFBunches.size() != 1 || eventRFBunches[0]->dNumParticleVotes < 2 ) return NOERROR;
-  m_t0RF = eventRFBunches[0]->dTime;
   
   DApplication* app = dynamic_cast<DApplication*>(loop->GetJApplication());
   const DMagneticFieldMap* fieldMap = app->GetBfield(loop->GetJEvent().GetRunNumber());
@@ -186,6 +203,7 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
     japp->RootFillLock(this);
 
     m_event = eventnumber;
+    m_t0RF = eventRFBunches[0]->dTime;
     
     for( size_t iShower = 0; iShower < showerVector.size(); ++iShower ){
       
@@ -296,14 +314,17 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
         m_typeSh = 2;
       }
 
+      DVector3 targetCenter( 0, 0, m_zTarget );
+      
       m_eSh = shower->getEnergy();
       m_tSh = shower->getTime();
       m_xSh = shower->getPosition().X();
       m_ySh = shower->getPosition().Y();
       m_zSh = shower->getPosition().Z();
+      m_depthSh = shower->getPosition().Z() - m_FCALUpstream;
 
-      m_disSh = ( shower->getPosition() - tracks[0]->position() ).Mag();
-      m_dtSh = shower->getTime() - tracks[0]->t0();
+      m_disSh = ( shower->getPosition() - targetCenter ).Mag();
+      m_dtSh = shower->getTime() - m_t0RF;
 
       m_disCl = cluster->getCentroid().Mag();
       m_eCl = cluster->getEnergy();
@@ -360,7 +381,8 @@ JEventProcessor_ShowerShapeTree::fillHitBlocks( const vector< const DFCALHit* >&
   for( vector< const DFCALHit* >::const_iterator hit = hitVec.begin();
       hit != hitVec.end();
       ++hit ){
-    
+
+    m_idHit[m_nHits] = m_fcalGeom.channel( (**hit).row, (**hit).column ); 
     m_xHit[m_nHits] = (**hit).x;
     m_yHit[m_nHits] = (**hit).y;
     m_eHit[m_nHits] = (**hit).E;
