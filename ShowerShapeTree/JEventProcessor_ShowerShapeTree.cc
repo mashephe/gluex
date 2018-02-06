@@ -20,8 +20,10 @@ using namespace jana;
 #include "PID/DChargedTrack.h"
 #include "PID/DNeutralShower.h"
 #include "PID/DDetectorMatches.h"
+#include "TRACKING/DTrackTimeBased.h"
 
 #include "DLorentzVector.h"
+#include "DVector3.h"
 #include "TTree.h"
 
 #include "DFactoryGenerator_OmegaSkim.h"
@@ -65,7 +67,8 @@ jerror_t JEventProcessor_ShowerShapeTree::init(void)
   m_tree = new TTree( "fcalShowers", "Showers" );
 
   m_tree->Branch( "event", &m_event, "event/L" );
-  
+  m_tree->Branch( "t0RF", &m_t0RF, "t0RF/F" );
+
   m_tree->Branch( "typeSh", &m_typeSh, "typeSh/I" );
   m_tree->Branch( "xSh", &m_xSh, "xSh/F" );
   m_tree->Branch( "ySh", &m_ySh, "ySh/F" );
@@ -74,8 +77,14 @@ jerror_t JEventProcessor_ShowerShapeTree::init(void)
   m_tree->Branch( "tSh", &m_tSh, "tSh/F" );
   m_tree->Branch( "disSh", &m_disSh, "disSh/F" );
   m_tree->Branch( "dtSh", &m_dtSh, "dtSh/F" );
+  m_tree->Branch( "dtTrSh", &m_dtTrSh, "dtTrSh/F" );
+  m_tree->Branch( "speedSh", &m_speedSh, "speedSh/F" );
   m_tree->Branch( "depthSh", &m_depthSh, "depthSh/F" );
-  m_tree->Branch( "t0RF", &m_t0RF, "t0RF/F" );
+  m_tree->Branch( "e1e9Sh", &m_e1e9Sh, "e1e9Sh/F" );
+  m_tree->Branch( "e9e25Sh", &m_e9e25Sh, "e9e25Sh/F" );
+  m_tree->Branch( "sumUSh", &m_sumUSh, "sumUSh/F" );
+  m_tree->Branch( "sumVSh", &m_sumVSh, "sumVSh/F" );
+  m_tree->Branch( "asymUVSh", &m_asymUVSh, "asymUVSh/F" );
 
   m_tree->Branch( "tCl", &m_tCl, "tCl/F" );
   m_tree->Branch( "eWtTCl", &m_eWtTCl, "eWtTCl/F" );
@@ -85,18 +94,10 @@ jerror_t JEventProcessor_ShowerShapeTree::init(void)
   
   m_tree->Branch( "qTr", &m_qTr, "qTr/F" );
   m_tree->Branch( "docaTr", &m_docaTr, "docaTr/F" );
-  m_tree->Branch( "t0Tr", &m_t0Tr, "t0Tr/F" );
   m_tree->Branch( "tTr", &m_tTr, "tTr/F" );
   m_tree->Branch( "pTr", &m_pTr, "pTr/F" );
   m_tree->Branch( "xTr", &m_xTr, "xTr/F" );
   m_tree->Branch( "yTr", &m_yTr, "yTr/F" );
-
-  m_tree->Branch( "docaTrPF", &m_docaTrPF, "docaTrPF/F" );
-  m_tree->Branch( "t0TrPF", &m_t0TrPF, "t0TrPF/F" );
-  m_tree->Branch( "tTrPF", &m_tTrPF, "tTrPF/F" );
-  m_tree->Branch( "pTrPF", &m_pTrPF, "pTrPF/F" );
-  m_tree->Branch( "xTrPF", &m_xTrPF, "xTrPF/F" );
-  m_tree->Branch( "yTrPF", &m_yTrPF, "yTrPF/F" );
   
   m_tree->Branch( "nHits", &m_nHits, "nHits/I" );
   m_tree->Branch( "idHit", m_idHit, "idHit[nHits]/I" );
@@ -147,13 +148,12 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
   loop->Get( eventRFBunches );
   if( eventRFBunches.size() != 1 || eventRFBunches[0]->dNumParticleVotes < 2 ) return NOERROR;
   
-  DApplication* app = dynamic_cast<DApplication*>(loop->GetJApplication());
-  const DMagneticFieldMap* fieldMap = app->GetBfield(loop->GetJEvent().GetRunNumber());
-
   for( vector< const DAnalysisResults* >::const_iterator res = analysisResultsVector.begin();
       res != analysisResultsVector.end(); ++res ){
 
-    if( (**res).Get_Reaction()->Get_ReactionName() != "p3pi_excl" ) continue;
+    const DReaction* reaction = (**res).Get_Reaction();
+    
+    if( reaction->Get_ReactionName() != "p3pi_excl" ) continue;
     
     size_t nCombos = (**res).Get_NumPassedParticleCombos();
 
@@ -163,28 +163,35 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
     (**res).Get_PassedParticleCombos( combos );
     const DParticleCombo* combo = combos[0];
 
-    vector<const DFCALShowerMatchParams*> matchedShowers;
+    vector< std::shared_ptr< const DFCALShowerMatchParams > > matchedShowers;
     map<const DFCALShower*, int> showerMatchIndex;
     map<const DFCALShower*, const DKinematicData*> showerMatchTrack;
     list<const DFCALShower*> pi0Showers;
-	  	  
-    deque< const DNeutralShower* > neutralShowers;      
-    combo->Get_DetectedFinalNeutralParticles_SourceObjects( neutralShowers );
-    
-    for( size_t i = 0; i < neutralShowers.size(); ++i ){
-        
-      if( neutralShowers[i]->dDetectorSystem == SYS_FCAL ){
-	
-	pi0Showers.push_back( dynamic_cast< const DFCALShower* >( neutralShowers[i]->dBCALFCALShower ) );
+
+    vector< const JObject* > neutralSource = 
+      combo->Get_FinalParticle_SourceObjects( d_Neutral );
+
+    for( size_t i = 0; i < neutralSource.size(); ++i ){
+      
+      const DNeutralShower* neutShower = dynamic_cast< const DNeutralShower* >( neutralSource[i] );
+      if( neutShower == NULL ) continue;  // shouldn't happen if sources are neutral
+      
+      if( neutShower->dDetectorSystem == SYS_FCAL ){
+
+	pi0Showers.push_back( dynamic_cast< const DFCALShower* >( neutShower->dBCALFCALShower ) );
       }
     }
 
-    deque<const DKinematicData*> tracks;
-    combo->Get_DetectedFinalChargedParticles( tracks );
+    // in this section we are looking to see if the existing track-shower matching
+    // algorithm geometrically matched a track to the shower
+    vector<const DKinematicData*> tracks =
+      combo->Get_FinalParticles( reaction, false, false, d_Charged );
     for( size_t iTrk = 0; iTrk < tracks.size(); ++iTrk ){
 
-      const DChargedTrackHypothesis* ctHypo = dynamic_cast<const DChargedTrackHypothesis*>( tracks[iTrk] );
-      const DFCALShowerMatchParams* match = ctHypo->Get_FCALShowerMatchParams();
+      const DChargedTrackHypothesis* ctHypo =
+	dynamic_cast<const DChargedTrackHypothesis*>( tracks[iTrk] );
+      std::shared_ptr< const DFCALShowerMatchParams > match =
+	ctHypo->Get_FCALShowerMatchParams();
 
       if( match == NULL ) continue;
       
@@ -193,9 +200,16 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
       showerMatchIndex[showerPtr] = matchedShowers.size();
       matchedShowers.push_back( match );	
     }
-    
 
-    vector<const DFCALShower*> showerVector;
+    // below here are mainly things that we expect to be able to do be done
+    // for every event, independent of topology, at the time of
+    // creation of DFCALShower objects
+    
+    vector< const DTrackWireBased* > allWBTracks;
+    loop->Get( allWBTracks );
+    vector< const DTrackWireBased* > wbTracks = filterWireBasedTracks( allWBTracks );
+    
+    vector< const DFCALShower* > showerVector;
     loop->Get( showerVector );
 
     // entering the tree-filling, thread-unsafe, region...
@@ -204,6 +218,11 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
 
     m_event = eventnumber;
     m_t0RF = eventRFBunches[0]->dTime;
+
+    DVector3 targetCenter( 0, 0, m_zTarget );
+
+    // a track -> shower vector that gets used later:
+    DVector3 u( 0, 0, 0 );
     
     for( size_t iShower = 0; iShower < showerVector.size(); ++iShower ){
       
@@ -222,7 +241,6 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
       // set nonsense values in case there isn't a "nearest track"
       m_docaTr = 1E6;
       m_tTr = 1E6;
-      m_t0Tr = 1E6;
       m_pTr = 0;
       m_qTr = 0;
       m_xTr = 1E6;
@@ -230,73 +248,34 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
 
       double pathLength, flightTime, flightTimeVariance;
       DVector3 projPos, projMom;
-      
-      // find the closest track to the shower
-      for( size_t iTrk = 0; iTrk < tracks.size(); ++iTrk ){
 
-	// this loop builds a reference trajectory from the post-fit
-	// position and momentum of the track
-	
-	DReferenceTrajectory rt( fieldMap );
-	rt.SetMass( tracks[iTrk]->mass() );
-	rt.q = tracks[iTrk]->charge();
-	rt.Swim( tracks[iTrk]->position(), tracks[iTrk]->momentum(), rt.q );
-	
+      // find the closest track to the shower -- here we loop over the best FOM
+      // wire-based track for every track candidate not just the ones associated
+      // with the topology
+      for( size_t iTrk = 0; iTrk < wbTracks.size(); ++iTrk ){
+
 	// swim the track to vertical plane the intercepts the shower position
-	if( rt.GetIntersectionWithPlane( fcalPos, norm, projPos, projMom, &pathLength,
-					 &flightTime, &flightTimeVariance, SYS_FCAL ) !=
+	if( wbTracks[iTrk]->rt->
+	    GetIntersectionWithPlane( fcalPos, norm, projPos, projMom, &pathLength,
+				      &flightTime, &flightTimeVariance, SYS_FCAL ) !=
 	    NOERROR ) continue;
-
+	
 	double distance = ( fcalPos - projPos ).Mag();
 	
 	if( distance < m_docaTr ){
 
 	  m_docaTr = distance;
-	  m_tTr = tracks[iTrk]->t0() + flightTime;
-	  m_t0Tr = tracks[iTrk]->t0();
+	  m_tTr = m_t0RF + ( ( wbTracks[iTrk]->position() - targetCenter ).Mag() ) / SPEED_OF_LIGHT +
+	    flightTime;
 	  m_xTr = projPos.X();
 	  m_yTr = projPos.Y();
-	  m_pTr = tracks[iTrk]->pmag();
-	  m_qTr = tracks[iTrk]->charge();
+	  m_pTr = wbTracks[iTrk]->pmag();
+	  m_qTr = wbTracks[iTrk]->charge();
 	}
       }
 
-      // set nonsense values in case there isn't a "nearest track"
-      m_docaTrPF = 1E6;
-      m_tTrPF = 1E6;
-      m_t0TrPF = 1E6;
-      m_pTrPF = 0;
-      m_xTrPF = 1E6;
-      m_yTrPF = 1E6;
-
-      // find the closest track to the shower
-      for( size_t iTrk = 0; iTrk < tracks.size(); ++iTrk ){
-
-	// this time we will use pre-fit data -- this is likely all that
-	// will be available in any generic event
-	const DChargedTrackHypothesis* ctHypo = dynamic_cast<const DChargedTrackHypothesis*>( tracks[iTrk] );
-	vector< const DTrackTimeBased* > tbTracks;
-	ctHypo->Get( tbTracks );
-
-	const DReferenceTrajectory* rt = tbTracks[0]->rt;
-	if( rt->GetIntersectionWithPlane( fcalPos, norm, projPos, projMom, &pathLength,
-					 &flightTime, &flightTimeVariance, SYS_FCAL ) !=
-	    NOERROR ) continue;
-	
-	double distance = ( fcalPos - projPos ).Mag();
-	
-	if( distance < m_docaTrPF ){
-
-	  m_docaTrPF = distance;
-	  m_tTrPF = tbTracks[0]->t0() + flightTime;
-	  m_t0TrPF = tbTracks[0]->t0();
-	  m_xTrPF = projPos.X();
-	  m_yTrPF = projPos.Y();
-	  m_pTrPF = tbTracks[0]->pmag();
-	}
-      }
-
-      // see if there was geometric matchin to a track or it was a photon shower:      
+      // see if there was geometric match to a track or it was a photon shower:
+      // (this is a level of sorting that will not exist -- used for algorithm training)
       if( showerMatchIndex.find( shower ) != showerMatchIndex.end() ){
 
 	// showers matched to a track by existing algorithm
@@ -314,8 +293,6 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
         m_typeSh = 2;
       }
 
-      DVector3 targetCenter( 0, 0, m_zTarget );
-      
       m_eSh = shower->getEnergy();
       m_tSh = shower->getTime();
       m_xSh = shower->getPosition().X();
@@ -326,15 +303,33 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
       m_disSh = ( shower->getPosition() - targetCenter ).Mag();
       m_dtSh = shower->getTime() - m_t0RF;
 
+      m_speedSh = m_disSh/m_dtSh;
+      m_dtTrSh = m_tSh - m_tTr;
+
+      // this is lower-level cluster information that is sometimes useful
+      // for calibration of shower creation
       m_disCl = cluster->getCentroid().Mag();
       m_eCl = cluster->getEnergy();
       m_tCl = cluster->getTime();
       m_eWtTCl = cluster->getTimeEWeight();
       m_eWtTRMSCl =cluster->getRMS_t();
+
+
+      // now start workign at the hit level
+      vector< const DFCALHit* > hits = getHitsFromShower( shower );
       
-      // this hit counter will get incremented in the fill function
+      // the following four variables will be get set in the subsequent
+      // loop over hits
       m_nHits = 0;
-      fillHitsFromShower( shower );
+      m_eMaxSh = 0;
+      m_xMaxSh = 0;
+      m_yMaxSh = 0;
+      fillHits( hits );
+
+      fillUVFromHits( hits, DVector3( m_xSh, m_ySh, 0 ), DVector3( m_xTr, m_yTr, 0 ) );
+
+      // this needs to run after the max locations have been set
+      fillE1925FromHits( hits, m_xMaxSh, m_yMaxSh );
       
       m_tree->Fill();
     }
@@ -370,8 +365,79 @@ jerror_t JEventProcessor_ShowerShapeTree::fini(void)
   return NOERROR;
 }
 
+
+vector< const DFCALHit* >
+JEventProcessor_ShowerShapeTree::getHitsFromShower( const DFCALShower* shower ) const {
+
+  vector< const DFCALHit* > allHits;
+  
+  vector< const DFCALCluster* > clusterVec;
+  shower->Get( clusterVec );
+
+  // I don't think there should ever be more than one cluster
+  // associated with a shower, but I will code this anyway....
+  for( unsigned int i = 0; i < clusterVec.size(); ++i ){
+    
+    vector< const DFCALHit* > hits;
+    clusterVec[i]->Get( hits );
+    allHits.insert( allHits.end(), hits.begin(), hits.end() );
+  }
+
+  return allHits;
+}
+
+vector< const DTrackWireBased* >
+JEventProcessor_ShowerShapeTree::filterWireBasedTracks( vector< const DTrackWireBased* >& wbTracks ) const {
+
+  vector< const DTrackWireBased* > finalTracks;
+  map< unsigned int, vector< const DTrackWireBased* > > sortedTracks;
+
+  // first sort the wire based tracks into lists with a common candidate id
+  // this means that they all come from the same track in the detector
+  
+  for( unsigned int i = 0; i < wbTracks.size(); ++i ){
+
+    unsigned int id = wbTracks[i]->candidateid;
+
+    if( sortedTracks.find( id ) == sortedTracks.end() ){
+      
+      sortedTracks[id] = vector< const DTrackWireBased* >();
+    }
+
+    sortedTracks[id].push_back( wbTracks[i] );
+  }
+
+  // now loop through that list of unique tracks and for each set
+  // of wire based tracks, choose the one with the highest FOM
+  // (this is choosing among different particle hypotheses)
+  
+  for( map< unsigned int, vector< const DTrackWireBased* > >::const_iterator
+	 anId = sortedTracks.begin();
+       anId != sortedTracks.end(); ++anId ){
+
+    double maxFOM = 0;
+    unsigned int bestIndex = 0;
+
+    for( unsigned int i = 0; i < anId->second.size(); ++i ){
+
+      if( anId->second[i]->Ndof < 15 ) continue;
+      
+      if( anId->second[i]->FOM > maxFOM ){
+
+	maxFOM = anId->second[i]->FOM;
+	bestIndex = i;
+      }
+    }
+
+    finalTracks.push_back( anId->second[bestIndex] );
+  }
+  
+  return finalTracks;
+}
+
+
 void
-JEventProcessor_ShowerShapeTree::fillHitBlocks( const vector< const DFCALHit* >& hitVec ){
+JEventProcessor_ShowerShapeTree::fillHits( const vector< const DFCALHit* >& hitVec ){
   
   // need to be sure to lock the event thread somewhere before
   // entering this function
@@ -379,34 +445,75 @@ JEventProcessor_ShowerShapeTree::fillHitBlocks( const vector< const DFCALHit* >&
   if( hitVec.size() + m_nHits > kMaxHits ) return;
   
   for( vector< const DFCALHit* >::const_iterator hit = hitVec.begin();
-      hit != hitVec.end();
-      ++hit ){
+      hit != hitVec.end(); ++hit ){
 
     m_idHit[m_nHits] = m_fcalGeom.channel( (**hit).row, (**hit).column ); 
     m_xHit[m_nHits] = (**hit).x;
     m_yHit[m_nHits] = (**hit).y;
     m_eHit[m_nHits] = (**hit).E;
     m_tHit[m_nHits] = (**hit).t;
+
+    if( (**hit).E > m_eMaxSh ){
+
+      m_eMaxSh = (**hit).E;
+      m_yMaxSh = (**hit).y;
+      m_xMaxSh = (**hit).x;
+    }
     
     ++m_nHits;
   }
 }
 
 void
-JEventProcessor_ShowerShapeTree::fillHitsFromShower( const DFCALShower* shower ){
+JEventProcessor_ShowerShapeTree::fillUVFromHits( const vector< const DFCALHit* >& hits,
+						 const DVector3& showerVec,
+						 const DVector3& trackVec ){
+
+  DVector3 u = ( showerVec - trackVec ).Unit();
+  DVector3 z( 0, 0, 1 );
+  DVector3 v = u.Cross( z );
+
+  DVector3 hitLoc( 0, 0, 0 );
+
+  m_sumUSh = 0;
+  m_sumVSh = 0;
+
+  double sumE = 0;
   
-  
-  vector< const DFCALCluster* > clusterVec;
-  shower->Get( clusterVec );
-  
-  // I don't think there should ever be more than one cluster
-  // associated with a shower, but I will code this anyway....
-  
-  for( unsigned int i = 0; i < clusterVec.size(); ++i ){
-    
-    vector< const DFCALHit* > hits;
-    clusterVec[i]->Get( hits );
-    fillHitBlocks( hits );
+  for( vector< const DFCALHit* >::const_iterator hit = hits.begin();
+	 hit != hits.end(); ++hit ){
+
+    hitLoc.SetX( (**hit).x - showerVec.X() );
+    hitLoc.SetY( (**hit).y - showerVec.Y() );
+
+    m_sumUSh += (**hit).E * pow( u.Dot( hitLoc ), 2 );
+    m_sumVSh += (**hit).E * pow( v.Dot( hitLoc ), 2 );
+
+    sumE += (**hit).E;
   }
+
+  m_sumUSh /= sumE;
+  m_sumVSh /= sumE;
+  m_asymUVSh = ( m_sumUSh - m_sumVSh ) / ( m_sumUSh + m_sumVSh );
 }
 
+void
+JEventProcessor_ShowerShapeTree::fillE1925FromHits( const vector< const DFCALHit* >& hits,
+						    float xMax, float yMax ){
+
+  float E9 = 0;
+  float E25 = 0;
+
+  for( vector< const DFCALHit* >::const_iterator hit = hits.begin();
+	 hit != hits.end(); ++hit ){
+     
+     if( fabs( (**hit).x - xMax ) < 4.5 && fabs( (**hit).y - yMax ) < 4.5 )
+       E9 += (**hit).E;
+
+     if( fabs( (**hit).x - xMax ) < 8.5 && fabs( (**hit).y - yMax ) < 8.5 )
+       E25 += (**hit).E;
+   }
+
+   m_e1e9Sh = m_eMaxSh/E9;
+   m_e9e25Sh = E9/E25;
+}
