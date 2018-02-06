@@ -6,11 +6,10 @@
 //
 
 #include "DReaction_factory_OmegaSkim.h"
-#include "DCustomAction_dEdxCut_p3pi.h"
 
 void DReaction_factory_OmegaSkim::PIDCuts(DReaction* locReaction)
 {
-  locReaction->Add_AnalysisAction(new DHistogramAction_PID(locReaction));
+  locReaction->Add_AnalysisAction(new DHistogramAction_PID(locReaction, false));
   locReaction->Add_AnalysisAction(new DCutAction_PIDDeltaT(locReaction, false, 2.0, Proton, SYS_TOF));
   locReaction->Add_AnalysisAction(new DCutAction_PIDDeltaT(locReaction, false, 2.5, Proton, SYS_BCAL));
   locReaction->Add_AnalysisAction(new DCutAction_PIDDeltaT(locReaction, false, 3.0, Proton, SYS_FCAL));
@@ -22,11 +21,10 @@ void DReaction_factory_OmegaSkim::PIDCuts(DReaction* locReaction)
   locReaction->Add_AnalysisAction(new DCutAction_PIDDeltaT(locReaction, false, 3.0, PiMinus, SYS_FCAL));
   locReaction->Add_AnalysisAction(new DCutAction_PIDDeltaT(locReaction, false, 2.0, Gamma, SYS_BCAL)); //false: measured data
   locReaction->Add_AnalysisAction(new DCutAction_PIDDeltaT(locReaction, false, 3.0, Gamma, SYS_FCAL)); //false: measured data
-  locReaction->Add_AnalysisAction(new DCustomAction_dEdxCut_p3pi(locReaction, false)); //false: focus on keeping signal
-  locReaction->Add_AnalysisAction(new DHistogramAction_PID(locReaction, "PostPIDCuts"));
+  locReaction->Add_AnalysisAction(new DHistogramAction_PID(locReaction, false, "PostPIDCuts"));
 
   // Cut low beam energy as tagger settings change during 2017-01
-  //	locReaction->Add_AnalysisAction(new DCutAction_BeamEnergy(locReaction, false, 7.0, 12.0));
+  locReaction->Add_AnalysisAction(new DCutAction_BeamEnergy(locReaction, false, 7.0, 12.0));
 }
 	
 
@@ -85,24 +83,15 @@ jerror_t DReaction_factory_OmegaSkim::evnt(JEventLoop* locEventLoop, uint64_t lo
   locReactionStep->Add_FinalParticleID(Gamma);
   locReaction->Add_ReactionStep(locReactionStep);
   dReactionStepPool.push_back(locReactionStep); //register so will be deleted later: prevent memory leak
-
+    locReactionStep->Set_KinFitConstrainInitMassFlag(false);
   /**************************************************** p3pi_preco_2FCAL Control Settings ****************************************************/
 
   // KINFIT
   locReaction->Set_KinFitType(d_P4AndVertexFit); //simultaneously constrain apply four-momentum conservation, invariant masses, and common-vertex constraints
 
   // Highly Recommended: When generating particle combinations, reject all beam photons that match to a different RF bunch
-  locReaction->Set_MaxPhotonRFDeltaT(0.5*dBeamBunchPeriod);
-
-  /************************************************** p3pi_preco_2FCAL Pre-Combo Custom Cuts *************************************************/
-
-  // Highly Recommended: Very loose invariant mass cuts, applied during DParticleComboBlueprint construction
-  locReaction->Set_InvariantMassCut(Pi0, 0.05, 0.22);
-  locReaction->Set_InvariantMassCut(omega, 0.4, 1.2);
-
-  // Highly Recommended: Very loose DAnalysisAction cuts, applied just after creating the combination (before saving it)
-  // Example: Missing mass squared of proton
-  locReaction->Add_ComboPreSelectionAction(new DCutAction_MissingMassSquared(locReaction, false, -0.1, 0.1));
+  //  locReaction->Set_MaxPhotonRFDeltaT(0.5*dBeamBunchPeriod);
+    locReaction->Set_NumPlusMinusRFBunches(0.5);
 
   /**************************************************** p3pi_preco_2FCAL Analysis Actions ****************************************************/
 
@@ -116,28 +105,24 @@ jerror_t DReaction_factory_OmegaSkim::evnt(JEventLoop* locEventLoop, uint64_t lo
   locReaction->Add_AnalysisAction(new DHistogramAction_InvariantMass(locReaction, omega, true, 600, 0.5, 1.1, "Omega_KinFit"));
 
   // Kinematic Fit Results
-  //5% confidence level cut on pull:
-  locReaction->Add_AnalysisAction(new DHistogramAction_KinFitResults(locReaction, 0.05, true)); 
+  locReaction->Add_AnalysisAction(new DHistogramAction_KinFitResults(locReaction, 0.05, true)); //5% confidence level cut on pull histograms only
   //  locReaction->Add_AnalysisAction(new DCutAction_KinFitFOM(locReaction, 5.73303E-7)); // confidence level cut //+/- 5 sigma
-  locReaction->Add_AnalysisAction(new DCutAction_KinFitFOM(locReaction, .05));
+  locReaction->Add_AnalysisAction(new DCutAction_KinFitFOM(locReaction, 0.05));
 
   locReaction->Add_AnalysisAction(new DCutAction_BeamEnergy(locReaction, true, 7.5, 9.0));
-  
+    
   // MASSES, POST-KINFIT
   locReaction->Add_AnalysisAction(new DHistogramAction_InvariantMass(locReaction, Pi0, false, 850, 0.05, 0.22, "Pi0_PostKinFitCut"));
   locReaction->Add_AnalysisAction(new DHistogramAction_MissingMassSquared(locReaction, false, 1000, -0.1, 0.1, "PostKinFitCut"));
   locReaction->Add_AnalysisAction(new DHistogramAction_InvariantMass(locReaction, omega, false, 600, 0.5, 1.1, "Omega_PostKinFitCut"));
   locReaction->Add_AnalysisAction(new DHistogramAction_InvariantMass(locReaction, omega, true, 600, 0.5, 1.1, "Omega_KinFit_PostKinFitCut"));
 
-  // cut around the invaraint mass of the omega
-  locReaction->Add_AnalysisAction(new DCutAction_InvariantMass(locReaction,omega,true,0.73,0.84));
-  locReaction->Add_AnalysisAction(new DHistogramAction_InvariantMass(locReaction, omega, true, 600, 0.5, 1.1, "Omega_AllCuts"));
-  
   // Kinematics of final selection
   //	locReaction->Add_AnalysisAction(new DHistogramAction_ParticleComboKinematics(locReaction, false, "Final")); //false: fill histograms with measured particle data
 
-  //   string locTreeFileName = "p3pi_excl_skim.root";
-  //   locReaction->Enable_TTreeOutput(locTreeFileName, true); //true/false: do/don't save unused hypotheses
+  // cut around omega mass
+  locReaction->Add_AnalysisAction(new DCutAction_InvariantMass(locReaction,omega,true,0.73,0.84));
+  locReaction->Add_AnalysisAction(new DHistogramAction_InvariantMass(locReaction, omega, true, 600, 0.5, 1.1, "Omega_AllCuts"));
   
   _data.push_back(locReaction); //Register the DReaction with the factory
 
