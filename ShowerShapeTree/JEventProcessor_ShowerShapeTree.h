@@ -66,14 +66,20 @@ public:
   float m_disSh;
   float m_dtSh;
   float m_dtTrSh;
+  float m_dtTrSh2;
   float m_speedSh;
   float m_depthSh;
   float m_e1e9Sh;
   float m_e9e25Sh;
   float m_sumUSh;
   float m_sumVSh;
+  float m_e1e9Sh2;
+  float m_e9e25Sh2;
+  float m_sumUSh2;
+  float m_sumVSh2;
   float m_asymUVSh;
-
+  float m_qualSh;
+  
   float m_eMaxSh;
   float m_xMaxSh;
   float m_yMaxSh;
@@ -86,6 +92,7 @@ public:
   
   float m_qTr;
   float m_docaTr;
+  float m_docaTr2;
   float m_tTr;
   float m_pTr;
   float m_xTr;

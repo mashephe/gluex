@@ -112,6 +112,12 @@ jerror_t JEventProcessor_FCALLEDTree::evnt(JEventLoop *loop, uint64_t eventnumbe
        hit != hits.end();
        ++hit ){
 
+    vector< const DFCALDigiHit* > digiHits;
+    (**hit).Get( digiHits );
+    if( digiHits.size() != 1 ) std::cout << "ERROR:  wrong size!! " << std::endl;
+    
+    const DFCALDigiHit& dHit = *(digiHits[0]);
+
     m_chan[m_nHits] = fcalGeom.channel( (**hit).row, (**hit).column );
     m_x[m_nHits] = (**hit).x;
     m_y[m_nHits] = (**hit).y;
@@ -120,10 +126,6 @@ jerror_t JEventProcessor_FCALLEDTree::evnt(JEventLoop *loop, uint64_t eventnumbe
 
     m_eTot += (**hit).E;
 
-    vector< const DFCALDigiHit* > digiHits;
-    (**hit).Get( digiHits );
-    const DFCALDigiHit& dHit = *(digiHits[0]);
-    
     m_ped[m_nHits] = (float)dHit.pedestal/dHit.nsamples_pedestal;
     m_peak[m_nHits] = dHit.pulse_peak - m_ped[m_nHits];
     m_integ[m_nHits] = dHit.pulse_integral -
