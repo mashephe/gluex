@@ -20,7 +20,7 @@ using namespace jana;
 #include "PID/DChargedTrack.h"
 #include "PID/DNeutralShower.h"
 #include "PID/DDetectorMatches.h"
-#include "TRACKING/DTrackTimeBased.h"
+#include "TRACKING/DTrackWireBased.h"
 
 #include "DLorentzVector.h"
 #include "DVector3.h"
@@ -78,13 +78,19 @@ jerror_t JEventProcessor_ShowerShapeTree::init(void)
   m_tree->Branch( "disSh", &m_disSh, "disSh/F" );
   m_tree->Branch( "dtSh", &m_dtSh, "dtSh/F" );
   m_tree->Branch( "dtTrSh", &m_dtTrSh, "dtTrSh/F" );
+  m_tree->Branch( "dtTrSh2", &m_dtTrSh2, "dtTrSh2/F" );
   m_tree->Branch( "speedSh", &m_speedSh, "speedSh/F" );
   m_tree->Branch( "depthSh", &m_depthSh, "depthSh/F" );
   m_tree->Branch( "e1e9Sh", &m_e1e9Sh, "e1e9Sh/F" );
   m_tree->Branch( "e9e25Sh", &m_e9e25Sh, "e9e25Sh/F" );
   m_tree->Branch( "sumUSh", &m_sumUSh, "sumUSh/F" );
   m_tree->Branch( "sumVSh", &m_sumVSh, "sumVSh/F" );
+  m_tree->Branch( "e1e9Sh2", &m_e1e9Sh2, "e1e9Sh2/F" );
+  m_tree->Branch( "e9e25Sh2", &m_e9e25Sh2, "e9e25Sh2/F" );
+  m_tree->Branch( "sumUSh2", &m_sumUSh2, "sumUSh2/F" );
+  m_tree->Branch( "sumVSh2", &m_sumVSh2, "sumVSh2/F" );
   m_tree->Branch( "asymUVSh", &m_asymUVSh, "asymUVSh/F" );
+  m_tree->Branch( "qualSh", &m_qualSh, "qualSh/F" );
 
   m_tree->Branch( "tCl", &m_tCl, "tCl/F" );
   m_tree->Branch( "eWtTCl", &m_eWtTCl, "eWtTCl/F" );
@@ -94,6 +100,7 @@ jerror_t JEventProcessor_ShowerShapeTree::init(void)
   
   m_tree->Branch( "qTr", &m_qTr, "qTr/F" );
   m_tree->Branch( "docaTr", &m_docaTr, "docaTr/F" );
+  m_tree->Branch( "docaTr2", &m_docaTr2, "docaTr2/F" );
   m_tree->Branch( "tTr", &m_tTr, "tTr/F" );
   m_tree->Branch( "pTr", &m_pTr, "pTr/F" );
   m_tree->Branch( "xTr", &m_xTr, "xTr/F" );
@@ -147,6 +154,19 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
   vector<const DEventRFBunch*> eventRFBunches;
   loop->Get( eventRFBunches );
   if( eventRFBunches.size() != 1 || eventRFBunches[0]->dNumParticleVotes < 2 ) return NOERROR;
+
+  map< const DFCALShower*, double > showerQualityMap;
+  vector< const DNeutralShower* > neutralShowers;
+  loop->Get( neutralShowers );
+  
+  for( size_t i = 0; i < neutralShowers.size(); ++i ){
+    
+    if( neutralShowers[i]->dDetectorSystem == SYS_FCAL ){
+      
+      const DFCALShower* fcalShower = dynamic_cast< const DFCALShower* >( neutralShowers[i]->dBCALFCALShower );	
+      showerQualityMap[fcalShower] = neutralShowers[i]->dQuality;
+     }
+  }
   
   for( vector< const DAnalysisResults* >::const_iterator res = analysisResultsVector.begin();
       res != analysisResultsVector.end(); ++res ){
@@ -181,7 +201,7 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
 	pi0Showers.push_back( dynamic_cast< const DFCALShower* >( neutShower->dBCALFCALShower ) );
       }
     }
-
+    
     // in this section we are looking to see if the existing track-shower matching
     // algorithm geometrically matched a track to the shower
     vector<const DKinematicData*> tracks =
@@ -238,6 +258,19 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
       DVector3 fcalPos = shower->getPosition();
       DVector3 norm( 0, 0, 1 );
 
+      m_eSh = shower->getEnergy();
+      m_tSh = shower->getTime();
+      m_xSh = shower->getPosition().X();
+      m_ySh = shower->getPosition().Y();
+      m_zSh = shower->getPosition().Z();
+      m_depthSh = shower->getPosition().Z() - m_FCALUpstream;
+
+      m_disSh = ( shower->getPosition() - targetCenter ).Mag();
+      m_dtSh = shower->getTime() - m_t0RF;
+      m_speedSh = m_disSh/m_dtSh;
+
+      m_qualSh = showerQualityMap[shower];
+        
       // set nonsense values in case there isn't a "nearest track"
       m_docaTr = 1E6;
       m_tTr = 1E6;
@@ -246,7 +279,8 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
       m_xTr = 1E6;
       m_yTr = 1E6;
 
-      double pathLength, flightTime, flightTimeVariance;
+      //      double pathLength, flightTimeVariance;
+      double flightTime;
       DVector3 projPos, projMom;
 
       // find the closest track to the shower -- here we loop over the best FOM
@@ -255,22 +289,35 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
       for( size_t iTrk = 0; iTrk < wbTracks.size(); ++iTrk ){
 
 	// swim the track to vertical plane the intercepts the shower position
+
+	/*
 	if( wbTracks[iTrk]->rt->
 	    GetIntersectionWithPlane( fcalPos, norm, projPos, projMom, &pathLength,
 				      &flightTime, &flightTimeVariance, SYS_FCAL ) !=
 	    NOERROR ) continue;
+	*/
+
+	if( !wbTracks[iTrk]->GetProjection( SYS_FCAL, projPos, &projMom, &flightTime ) ) continue;
 	
-	double distance = ( fcalPos - projPos ).Mag();
+	// need to swim fcalPos to common z for DOCA calculation -- this really
+	// shouldn't be in the loop if the z-value of projPos doesn't change
+	// with each track
+	
+	DVector3 fcalFacePos = ( shower->getPosition() - targetCenter );
+	fcalFacePos.SetMag( fcalFacePos.Mag() * projPos.Z() / fcalFacePos.Z() );
+ 
+	double distance = ( fcalFacePos - projPos ).Mag();
 	
 	if( distance < m_docaTr ){
 
 	  m_docaTr = distance;
-	  m_tTr = m_t0RF + ( ( wbTracks[iTrk]->position() - targetCenter ).Mag() ) / SPEED_OF_LIGHT +
+	  m_tTr = m_t0RF + ( wbTracks[iTrk]->position().Z() - targetCenter.Z() ) / SPEED_OF_LIGHT +
 	    flightTime;
 	  m_xTr = projPos.X();
 	  m_yTr = projPos.Y();
 	  m_pTr = wbTracks[iTrk]->pmag();
 	  m_qTr = wbTracks[iTrk]->charge();
+	  m_dtTrSh = m_tSh - m_tTr;
 	}
       }
 
@@ -292,20 +339,7 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
         // showers that are unmatched
         m_typeSh = 2;
       }
-
-      m_eSh = shower->getEnergy();
-      m_tSh = shower->getTime();
-      m_xSh = shower->getPosition().X();
-      m_ySh = shower->getPosition().Y();
-      m_zSh = shower->getPosition().Z();
-      m_depthSh = shower->getPosition().Z() - m_FCALUpstream;
-
-      m_disSh = ( shower->getPosition() - targetCenter ).Mag();
-      m_dtSh = shower->getTime() - m_t0RF;
-
-      m_speedSh = m_disSh/m_dtSh;
-      m_dtTrSh = m_tSh - m_tTr;
-
+  
       // this is lower-level cluster information that is sometimes useful
       // for calibration of shower creation
       m_disCl = cluster->getCentroid().Mag();
@@ -315,7 +349,7 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
       m_eWtTRMSCl =cluster->getRMS_t();
 
 
-      // now start workign at the hit level
+      // now start working at the hit level
       vector< const DFCALHit* > hits = getHitsFromShower( shower );
       
       // the following four variables will be get set in the subsequent
@@ -330,6 +364,13 @@ jerror_t JEventProcessor_ShowerShapeTree::evnt(JEventLoop *loop, uint64_t eventn
 
       // this needs to run after the max locations have been set
       fillE1925FromHits( hits, m_xMaxSh, m_yMaxSh );
+
+      m_docaTr2 = shower->getDocaTrack();
+      m_dtTrSh2 = m_tSh - m_t0RF - shower->getTimeTrack();
+      m_sumUSh2 = shower->getSumU();
+      m_sumVSh2 = shower->getSumV();
+      m_e1e9Sh2 = shower->getE1E9();
+      m_e9e25Sh2 = shower->getE9E25();
       
       m_tree->Fill();
     }
