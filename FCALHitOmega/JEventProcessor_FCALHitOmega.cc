@@ -68,10 +68,11 @@ jerror_t JEventProcessor_FCALHitOmega::init(void)
   m_treeSh->Branch( "xHitSh", m_xHitSh , "xHitSh[nHitSh]/F" );
   m_treeSh->Branch( "yHitSh", m_yHitSh , "yHitSh[nHitSh]/F" );
   m_treeSh->Branch( "eHitSh", m_eHitSh , "eHitSh[nHitSh]/F" );
-  m_treeSh->Branch( "tHitSh", m_dtHitSh, "dtHitSh[nHitSh]/F" );
+  m_treeSh->Branch( "dtHitSh", m_dtHitSh, "dtHitSh[nHitSh]/F" );
 
   m_treeEvt = new TTree( "allHits", "All Hits" );
-  m_treeEvt->Branch( "omegaMassEvt" , &m_omegaMassEvt, "omegaMassEvt/I" );
+  m_treeEvt->Branch( "omegaMassEvt" , &m_omegaMassEvt, "omegaMassEvt/F" );
+  m_treeEvt->Branch( "nShEvt"  , &m_nShEvt,  "nShEvt/I" );
   m_treeEvt->Branch( "nHitEvt" , &m_nHitEvt, "nHitEvt/I" );
   m_treeEvt->Branch( "xHitEvt" , m_xHitEvt , "xHitEvt[nHitEvt]/F" );
   m_treeEvt->Branch( "yHitEvt" , m_yHitEvt , "yHitEvt[nHitEvt]/F" );
@@ -210,6 +211,7 @@ jerror_t JEventProcessor_FCALHitOmega::evnt(JEventLoop *loop, uint64_t eventnumb
   }
 
   m_omegaMassEvt = omegaCandP4.Mag();
+  m_nShEvt = pi0Showers.size();
   m_nHitEvt = allHits.size();
   for( size_t iHit = 0; iHit < allHits.size(); ++iHit ){
 

@@ -55,6 +55,7 @@ class JEventProcessor_FCALHitOmega : public jana::JEventProcessor {
 
   float m_omegaMassEvt;
   int m_nHitEvt;
+  int m_nShEvt;
   float m_xHitEvt[kMaxHitsEvt];
   float m_yHitEvt[kMaxHitsEvt];
   float m_eHitEvt[kMaxHitsEvt];
